@@ -9,45 +9,45 @@ guide_group: 2
 guide_order: 1
 TODO: ["use utility EJB to handle transaction boundaries?"]
 ---
-Dieser Leitfaden zeigt Dir, wie Du Arquillian zum Testen Deiner Java Persistence (JPA) Schicht verwendest. Nach dem Lesen kennst Du die Folgenden Dinge:
+Dieser Leitfaden zeigt Dir, wie Du Arquillian zum Testen Deiner Java Persistence (JPA) Schicht verwendest. Nach dem Lesen kennst Du die folgenden Dinge:
 
-* Create a test archive that includes the JPA descriptor (persistence.xml)
-* Inject the EntityManager and UserTransaction into your test
-* Persist entities and retrieve them by querying via JPQL and the JPA 2 Criteria API
-* Execute the tests using different JPA providers
+* Einen Test erstellen, welcher den JPA deployment descriptor (persistence.xml) enthält
+* Den EntityManager und die UserTransaction in einen Test injizieren
+* Entitäten persistieren und via JPQL und JPA2 Criteria API wieder laden
+* Tests unter Verwendung verschiedener JPA Provider ausführen
 
-You'll soon discover that Arquillian offers the perfect recipe for testing JPA or to simply experiment with how it works. We've designed this guide to be easy to follow so that you can come back to it whenever you need to hammer on JPA.
+Schnell wirst Du sehen, dass Arquillian das perfekte Rezept zum Testen von JPA liefert. Dieser Leitfaden ist geschrieben um ihm einfach folgen zu können und jederzeit zurückzukommen, wann auch immer Du mit JPA kodieren musst.
 
-h3. Assumptions
+h3. Annahmen
 
-We'll assume that you've read either the "Getting Started":/guides/getting_started guide or the "Get Started Faster with Forge":/guides/get_started_faster_with_forge guide and already have an Arquillian test suite setup in a Maven project. Feel free to remove the Java classes to make way for the new lesson. We'll be adding a JPA entity to the project to create a basic Java persistence test (JPA). From there, you can apply these instructions to other entities you may need to test.
+Wir gehen davona us, dass Du entweder den "Erste Schritte":/guides/getting_started_de oder den "Noch schneller Starten mit Forge":/guides/get_started_faster_with_forge_de Leitfaden gelesen hast und bereits ein Arquillian Test Suite Setup in einem Maven Projekt vorliegen hast. Lösche gerne die bereits vorhandenen Klassen, um Plat für die neuen zu machen. Wir fügen eine JPA Entity im Projekt hinzu um einen einfachen Java Persistence Test zu erstellen. Von dort aus kannst Du die Anweisungen auf jede andere Entität, welche Du testen möchtest übertragen.
 
-The instructions in this guide are specific to a Maven project, though remember that Arquillian is not tied to Maven in any way. We'll be running the tests in Embedded GlassFish and a local JBoss AS 7 instance. You can also use any other container that provides JPA and is supported by Arquillian.
+Die Anweisungen in diesem Leitfaden sind spezielle für ein Maven basiertes Projekt ausgelegt, auch wenn Arquillian nicht an Maven gebunden ist. Die Tests werden im Embeddedd GlassFish und im lokalen JBoss AS 7 ausgeführt. Du kannst aber auch jeden anderen Container mit einem verfügbaren JPA Provider verwenden, der von Arquillian unterstützt wird.
 
-p(warning). %You can't use the arquillian-weld-ee-embedded profile in this tutorial since Weld does not provide the JPA service (Weld only provides CDI).%
+p(warning). %Das arquillian-weld-ee-embedded Profil kann in diesem Leitfaden nicht verwendet werden, da Weld keinen JPA Service bereitstellt. (Weld stellt nur CDI Funktionalitäten zur Verfügung).%
 
-h3. Purpose
+h3. Zweck
 
-The application has a (video) @Game@ entity containing two fields:
+Die Anwendung enthält eine (Video-) @Game@ Entität mit zwei Attributen:
 
-* @id@ - the primary key
-* @title@ - the title of the game
+* @id@ - Der Primärschlüssel
+* @title@ - Der Titel des Spiels
 
-We'll be writing a test that persists sample entries to the database and then retrieve them using both JPQL and the JPA 2 Criteria API. When we're done, the test will perform these three tasks:
+Wir werden einen Test schreiben, welcher Beispiel-Entitäten in die Datenbank persistiert und diese dann sowohl mit JPQL als auch mit der JPA2 Criteria API wieder läd. Am Ende wird der Test die folgenden drei Schritte ausführen:
 
-* store sample entities in the database using the JPA @EntityManager@
-* query the database using JPQL
-* query the database using JPA 2 Criteria API
+* Beispiel-Entitäten mit dem JPA @EntityManager@ in die Datenbank schreiben 
+* Die Datenbank mithilfe von JPQL abfragen
+* Die Datenbank mithilfe der JPA 2 Criteria API abfragen
 
-The entire source code is available in the "Arquillian examples project":http://github.com/arquillian/arquillian-examples/tree/master/arquillian-persistence-tutorial on github. To see it in action, all you need to do is run the following command (and a hint of patience to wait for Maven to download the dependencies).
+Der komplette Source-Code ist im "Arquillian examples project":http://github.com/arquillian/arquillian-examples/tree/master/arquillian-persistence-tutorial auf github verfügbar. Um ihn in Aktion zu sehen musst Du lediglich das folgende Kommando eingeben (und ein wenig Geduld für Maven haben, bis alle abhängigen Bibliotheken heruntergeladen sind).
 
 bc(command). mvn test
 
-Let's dig into how it works.
+Nun schauen wir uns an, wie das genau funktioniert.
 
-h3. Project Structure
+h3. Project Struktur
 
-To get you acclimated, here's the directory structure of the project:
+Um Dich einzugewöhnen schauen wir uns die Verzeichnisstruktur des Projekts an:
 
 (filetree)* src/
 ** main/
@@ -75,11 +75,11 @@ To get you acclimated, here's the directory structure of the project:
 **** test-persistence.xml
 * pom.xml
 
-@Game@ is the JPA entity class and test-persistence.xml is a modified version of persistence.xml that provides the definition of our Persistence Unit for the test environment. Notice there are two test folders containing a test-persistence.xml file, one for each container we'll be using. We'll explain how those get selected later.
+@Game@ ist die JPA Entity Klasse und test-persistence.xml ist eine modofizierte Version der persistence.xml die eine Definition der Persistence Unit für die Test Umgebung enthält. Beachte, dass zwei Test Ordner eine test-persistence.xml enthalten. Eine für jeden Container welchen wir verwenden werden. Dazu mehr später.
 
-We recommend using a dedicated JPA descriptor as a best practice for testing to accomodate using a different DataSource for testing and configuring your persistence provider differently from production. For example, in the test environment, you may want to use a "drop-and-create-tables" strategy to manage the schema of the DataSource. You may also want see the database queries in the logging output. These settings can be activated in test-persistence.xml without affecting the main application, as you'll see below. We'll leave the main persistence.xml alone since that's the definition for the production environment.
+Wir empfehlen die Verwendung eines separaten JPA Deskriptors für jeden zu testenden Container als optimale Vorgehensweise um den Test von der Produktion unterschiedlich zu Konfigurieren. Beispielsweise möchte man in der Testumgebung eine "drop-and-create-tables" Strategie verwenden um die Schemata der DataSource zu verwalten. Auch ist das Loggen der Queries in einer Testumgebung durchaus gewünscht. Beides würde in Produktivumgebungen nicht sinnvoll sein. Mit den verschiedenen test-persistence.xml Deployment Deskriptoren kann genau dies erfolgen, ohne die eigentliche Anwendung zu beeinflussen. Die eigentliche persistence.xml wird unverändert gelassen, nachdem diese lediglich die Definitionen für die Produktivumgebung enthält.
 
-Here's the source of the @Game@ entity class, as denoted by the @@Entity@ annotation:
+Hier ist der Source-Code der @Game@ Entity Klasse:
 
 div(filename). src/main/resources/org/arquillian/example/Game.java
 
@@ -128,13 +128,13 @@ public class Game implements Serializable {
     }
 }
 
-p. The primary key is defined using the @@Id@ annotation on the field. Additional columns are derived automatically from bean properties (standard getter/setter convention). You can use the @@Column@ annotation to explicitly set the name of the column. Otherwise, the column name is determined by removing the "get" prefix from the bean property's read method and lowercasing the first character of the remainder (e.g., getTitle() &rarr; title).
+p. Der Primärschlüssel wird mit der @@Id@ Annotation am gleichnamigen Attribut gesetzt. Weitere Spalten werden automatisch aus den Bean Properties (standard getter/setter convention) ermittelt. Darüber hinaus können diese aber auch mit der @@Column@ Annotation explizit gesetzt werden. Ohne Annotation gilt die Konvention, dass der Spaltenname in der Datenbank aus dem Attribut-Namen oder dem Namen der Eigenschaft (analog der JavaBean Konvention) ohne das "get" Prefix und mit vorangestelltem Kleinbuchstaben gebildet wird (bspw., getTitle() &rarr; title).  
 
-We're also using standard Bean Validation annotations to enforce constraints. Here, a title must be provided and it must be between 3 and 50 characters long. (Hint: That would make another good test).
+Darüber hinaus verwenden wir die Standard Annotationen der Bean Validation um Werteinschränkungen zu prüfen. So muss ein Titel enthalten sein (@@NotNull@) und er muss zwischen 3 und 50 Zeichen lang sein. (Hinweis: Das würde auch einen guten Test hergeben).
 
-h3. Write the Test
+h3. Den Test Schreiben
 
-Speaking of tests, let's create a new JUnit 4 Arquillian test case, @GamePersistenceTest@, and prepare it to test our JPA operations. We'll leverage "CDI (JSR-299)":http://docs.jboss.org/cdi/spec/1.0/html to supply us with the resources we need via dependency injection. (Alternatively, you could use a utility EJB to handle the transaction boundaries, which we'll visit in a later guide).
+Wo wir grade bei Tests sind erstellen wir direkt einen neuen JUnit 4 Arquillian Testfall mit dem Namen @GamePersistenceTest@ und bereiten wir diesen für die JPA Operationen vor. Dabei verwenden wir die Möglichkeiten von "CDI (JSR-299)":http://docs.jboss.org/cdi/spec/1.0/html um die benötigen Ressourcen per Dependency Injection zu erreichen. (Alternativ könnten die Transaktionsgrenzen auch von einer EJB übernommen werden; das erfolgt aber in einem späteren Leitfaden.)
 
 div(filename). src/test/java/org/arquillian/example/GamePersistenceTest.java
 
@@ -177,6 +177,8 @@ public class GamePersistenceTest {
  
     // tests go here
 }
+
+p. ///TODODDTOTODODODODOTOTOTO
 
 p. Let's work from top to bottom to understand what's going on here before we get to the tests.
 
